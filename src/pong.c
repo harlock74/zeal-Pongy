@@ -8,28 +8,17 @@
 #include <zos_video.h>
 #include <zvb_gfx.h>
 #include <zvb_hardware.h>
-#include "controller.h"
-#include "keyboard.h"
-#include "utils.h"
+#include <zgdk.h>
+#include "assets.h"
 #include "pong.h"
 
 gfx_context vctx;
-Player player;
+Player player1;
 Player player2;
 Player ball;
 static uint8_t controller_mode = 1;
 static uint8_t frames = 0;
 // static uint16_t buttons = 0;
-
-#define PLAYER_SPEED   1
-#define BALL_WIDTH     3
-#define PLAYER_HEIGHT  16
-#define PLAYER_WIDTH   16
-#define REAL_PLAYER_WIDTH  6
-#define SCREEN_TOP_BOUNDARY   24
-#define SCREEN_BOTTOM_BOUNDARY   232
-#define BALL_TOP_BOUNDARY   8
-#define BALL_BOTTOM_BOUNDARY   232
 
 static uint8_t tilemap[WIDTH * HEIGHT];
 
@@ -77,64 +66,53 @@ void init(void) {
     err = gfx_initialize(ZVB_CTRL_VID_MODE_GFX_320_8BIT, &vctx);
     if (err) exit(1);
 
-    // Load the palette
-    extern uint8_t _pong_palette_end;
-    extern uint8_t _pong_palette_start;
-    size_t size = &_pong_palette_end - &_pong_palette_start;
-    err = gfx_palette_load(&vctx, &_pong_palette_start, size, 0);
+    err = load_palette(&vctx);
     if (err) exit(1);
 
-    // Load the tiles
-    extern uint8_t _pong_tileset_end;
-    extern uint8_t _pong_tileset_start;
-    size = &_pong_tileset_end - &_pong_tileset_start;
     gfx_tileset_options options = {
-        .compression = TILESET_COMP_NONE,
+        .compression = TILESET_COMP_RLE,
     };
-    err = gfx_tileset_load(&vctx, &_pong_tileset_start, size, &options);
+
+    err = load_tiles(&vctx, &options);
     if (err) exit(1);
 
-    extern uint8_t _numbers_tileset_end;
-    extern uint8_t _numbers_tileset_start;
-    size = &_numbers_tileset_end - &_numbers_tileset_start;
-    options.compression = TILESET_COMP_RLE;
-    options.from_byte = TILE_SIZE * 44; // 0x6100 // ASCII 44, comma
-    err = gfx_tileset_load(&vctx, &_numbers_tileset_start, size, &options);
-    if (err) exit(1);
-
+    ascii_map(',', 16, 16);
 
     // Draw the tilemap
     load_tilemap();
 
     // Setup the player
-    player.sprite.x = 16;
-    player.sprite.y = 120;
-    player.score = 0;
-    player.level = 1;
-    player.sprite_index = PLAYER_TILE;
-    player.sprite.flags = SPRITE_NONE;
-    player.sprite.tile = PLAYER_TILE;
-    gfx_sprite_set_tile(&vctx, 0, PLAYER_TILE);
+    player1.sprite.x = 16;
+    player1.sprite.y = 120;
+    player1.score = 0;
+    player1.level = 1;
+    player1.sprite_index = 1;
+    player1.sprite.flags = SPRITE_NONE;
+    player1.sprite.tile = PLAYER1_TILE;
+    gfx_sprite_render(&vctx, player1.sprite_index, &player1.sprite);
+    // gfx_sprite_set_tile(&vctx, 0, PLAYER_TILE);
 
     // Setup the ball
     ball.sprite.x = 160;
     ball.sprite.y = 128;
     ball.score = 0;
     ball.level = 1;
-    ball.sprite_index = BALL_TILE;
+    ball.sprite_index = 2;
     ball.sprite.flags = SPRITE_NONE;
     ball.sprite.tile = BALL_TILE;
-    gfx_sprite_set_tile(&vctx, 1, BALL_TILE);
+    gfx_sprite_render(&vctx, ball.sprite_index, &ball.sprite);
+    // gfx_sprite_set_tile(&vctx, 1, BALL_TILE);
 
     // Setup player 2
     player2.sprite.x = 320;
     player2.sprite.y = 180;
     player2.score = 0;
     player2.level = 1;
-    player2.sprite_index = PLAYER2_TILE;
+    player2.sprite_index = 3;
     player2.sprite.flags = SPRITE_NONE;
     player2.sprite.tile = PLAYER2_TILE;
-    gfx_sprite_set_tile(&vctx, 2, PLAYER2_TILE);
+    gfx_sprite_render(&vctx, player2.sprite_index, &player2.sprite);
+    // gfx_sprite_set_tile(&vctx, 2, PLAYER2_TILE);
 
     gfx_enable_screen(1);
 }
@@ -150,10 +128,10 @@ void load_tilemap(void) {
     uint8_t line[WIDTH];
 
     // Load the tilemap
-    extern uint8_t _pong_tilemap_start;
+    uint8_t *tilemap_start = get_tilemap_start();
     for (uint16_t y = 0; y < HEIGHT; y++) {
         uint16_t offset = y * WIDTH;
-        memcpy(&line, &_pong_tilemap_start + offset, WIDTH);
+        memcpy(&line, tilemap_start + offset, WIDTH);
         memcpy(&tilemap[offset], &line, WIDTH);
         gfx_tilemap_load(&vctx, line, WIDTH, TILEMAP_LAYER, 0, y);
     }
@@ -164,13 +142,13 @@ uint8_t input(void) {
     if(controller_mode == 1) {
         buttons |= controller_read();
     }
-    //player.h_direction = 0;
-    player.v_direction = 0;
-    //if(buttons & SNES_RIGHT) player.h_direction = 1;
-    //if(buttons & SNES_LEFT) player.h_direction = -1;
-    if(buttons & SNES_DOWN) player.v_direction = 1;
-    if(buttons & SNES_UP) player.v_direction = -1;
-    if(buttons & SNES_START) return 0;
+
+    player1.v_direction = 0;
+
+    if(buttons & BUTTON_DOWN) player1.v_direction = 1;
+    if(buttons & BUTTON_UP) player1.v_direction = -1;
+    if(buttons & BUTTON_START) return 0;
+
     return 255;
 }
 /*
@@ -192,7 +170,7 @@ void update(void) {
 
     static int8_t dx =1;
     static int8_t dy =1;
-    int8_t angle = (player.sprite.y - ball.sprite.y)/8;
+    int8_t angle = (player1.sprite.y - ball.sprite.y)/8;
     int8_t angle2 = (player2.sprite.y - ball.sprite.y)/8;
    
        /*
@@ -215,11 +193,11 @@ void update(void) {
     ball.sprite.y += dy;
     
     //Player 1 bouncing physics
-    player.sprite.y += player.v_direction*2;
-    if ((ball.sprite.x - BALL_WIDTH <= player.sprite.x) && 
-       (ball.sprite.x - BALL_WIDTH >= player.sprite.x - REAL_PLAYER_WIDTH) && 
-       (ball.sprite.y <= player.sprite.y) && 
-       (ball.sprite.y >= (player.sprite.y - PLAYER_HEIGHT))) 
+    player1.sprite.y += player1.v_direction*2;
+    if ((ball.sprite.x - BALL_WIDTH <= player1.sprite.x) && 
+       (ball.sprite.x - BALL_WIDTH >= player1.sprite.x - REAL_PLAYER_WIDTH) && 
+       (ball.sprite.y <= player1.sprite.y) && 
+       (ball.sprite.y >= (player1.sprite.y - PLAYER_HEIGHT))) 
        //dx=1;
        
        {
@@ -278,8 +256,8 @@ void update(void) {
     {
     ball.sprite.x = 160;
     ball.sprite.y = 128;
-    player.sprite.x = 16;
-    player.sprite.y = 120;
+    player1.sprite.x = 16;
+    player1.sprite.y = 120;
     player2.sprite.x = 320;
     player2.sprite.y = 180;
     player2.score += 1;
@@ -290,11 +268,11 @@ void update(void) {
     {
     ball.sprite.x = 160;
     ball.sprite.y = 128;
-    player.sprite.x = 16;
-    player.sprite.y = 120;
+    player1.sprite.x = 16;
+    player1.sprite.y = 120;
     player2.sprite.x = 320;
     player2.sprite.y = 180;
-    player.score += 1;
+    player1.score += 1;
     }  
 
     //Ball boundary limits
@@ -302,8 +280,8 @@ void update(void) {
     if (ball.sprite.y <= BALL_TOP_BOUNDARY) dy=2;
     
     //Player1 boundary limits
-    if (player.sprite.y < SCREEN_TOP_BOUNDARY) player.sprite.y = SCREEN_TOP_BOUNDARY;
-    if (player.sprite.y > SCREEN_BOTTOM_BOUNDARY) player.sprite.y = SCREEN_BOTTOM_BOUNDARY;
+    if (player1.sprite.y < SCREEN_TOP_BOUNDARY) player1.sprite.y = SCREEN_TOP_BOUNDARY;
+    if (player1.sprite.y > SCREEN_BOTTOM_BOUNDARY) player1.sprite.y = SCREEN_BOTTOM_BOUNDARY;
   
     //Player2 boundary limits
     if (player2.sprite.y < SCREEN_TOP_BOUNDARY) player2.sprite.y = SCREEN_TOP_BOUNDARY;
@@ -313,7 +291,7 @@ void update(void) {
 
 void update_hud(void) {
     char text[10];
-    sprintf(text, "%02d", player.score);
+    sprintf(text, "%02d", player1.score);
     nprint_string(&vctx, text, strlen(text), 7, 1);
 
     sprintf(text, "%02d", player2.score);
@@ -321,39 +299,23 @@ void update_hud(void) {
 }
 
 void draw(void) {
-    uint8_t err = gfx_sprite_render(&vctx, 0, &player.sprite);
-    err = gfx_sprite_render(&vctx, 1, &ball.sprite);
-    err = gfx_sprite_render(&vctx, 2, &player2.sprite);
-    if(err != 0) {
-        printf("graphics error: %d", err);
-        exit(1);
-    }
+    uint8_t err;
+    err = gfx_sprite_render(&vctx, player1.sprite_index, &player1.sprite);
+    // if(err != 0) {
+    //     printf("graphics error: player: %d", err);
+    //     exit(1);
+    // }
+
+    err = gfx_sprite_render(&vctx, ball.sprite_index, &ball.sprite);
+    // if(err != 0) {
+    //     printf("graphics error: ball: %d", err);
+    //     exit(1);
+    // }
+
+    err = gfx_sprite_render(&vctx, player2.sprite_index, &player2.sprite);
+    // if(err != 0) {
+    //     printf("graphics error: player2: %d", err);
+    //     exit(1);
+    // }
 }
 
-void __assets__(void) {
-    __asm__(
-    // pong palette
-    "__pong_palette_start:\n"
-    "    .incbin \"assets/pong.ztp\"\n"
-    "__pong_palette_end:\n"
-    // pong tiles
-    "__pong_tileset_start:\n"
-    "    .incbin \"assets/pong.zts\"\n"
-    "__pong_tileset_end:\n"
-
-    // numbers palette
-    "__numbers_palette_start:\n"
-    "    .incbin \"assets/numbers.ztp\"\n"
-    "__numbers_palette_end:\n"
-
-    // numbers tiles
-    "__numbers_tileset_start:\n"
-    "    .incbin \"assets/numbers.zts\"\n"
-    "__numbers_tileset_end:\n"
-
-    // tilemap
-    "__pong_tilemap_start:\n"
-    "    .incbin \"assets/pong.ztm\"\n"
-    "__pong_tilemap_end:\n"
-    );
-}

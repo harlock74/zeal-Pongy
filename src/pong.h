@@ -6,16 +6,25 @@
 
 #pragma once
 
-#define FREE_TILE           0x01
-#define BACKGROUND_TILE     0x11
-#define PLAYER_TILE         0x09
-#define BALL_TILE           0xA
-#define PLAYER2_TILE        0xB
+#define FREE_TILE           1
+#define BACKGROUND_TILE     0
+#define PLAYER1_TILE         9
+#define BALL_TILE           10
+#define PLAYER2_TILE        11
 #define WIDTH               20
 #define HEIGHT              15
-#define TILE_SIZE           (16  * 16)
 #define TILEMAP_LAYER       0
 #define HUD_LAYER           1
+
+#define PLAYER_SPEED                1
+#define BALL_WIDTH                  3
+#define PLAYER_HEIGHT               16
+#define PLAYER_WIDTH                16
+#define REAL_PLAYER_WIDTH           6
+#define SCREEN_TOP_BOUNDARY         24
+#define SCREEN_BOTTOM_BOUNDARY      232
+#define BALL_TOP_BOUNDARY           8
+#define BALL_BOTTOM_BOUNDARY        232
 
 typedef struct {
     gfx_sprite sprite;
